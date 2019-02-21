@@ -1,0 +1,33 @@
+{
+  "name": "pistore",
+  "version": "0.0.1",
+  "description": "A simple Redux like store implemented based on RxJS",
+  "main": "index.js",
+  "scripts": {
+    "test": "jasmine",
+    "build": "tsc"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tech-pi/PiStore.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/tech-pi/PiStore/issues"
+  },
+  "homepage": "https://github.com/tech-pi/PiStore#readme",
+  "devDependencies": {
+    "@types/jasmine": "^3.3.8",
+    "@types/node": "^10.12.18",
+    "jasmine": "^3.3.1",
+    "jasmine-ts": "^0.3.0",
+    "ts-node": "^8.0.2",
+    "typescript": "^3.2.4"
+  },
+  "dependencies": {
+    "@types/uuid": "^3.4.4",
+    "rxjs": "^6.3.3",
+    "uuid": "^3.3.2"
+  }
+}
