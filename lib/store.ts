@@ -1,9 +1,16 @@
 import {Observable, BehaviorSubject, of, from} from "rxjs";
 import {distinctUntilChanged} from 'rxjs/operators';
+// const Either
+export type Either<P extends boolean, T, F> = P extends true ? T : F;
+export type MaybeObservable<P extends boolean, T> = Either<P, Observable<T>, T>;
 
-export type MaybeObservable<IsAsync extends boolean, T> = IsAsync extends false
-    ? T
-    : Observable<T>;
+export function toEither<P extends boolean, T, F>(
+    p: P,
+    tfn: () => T,
+    ffn: () => F,
+): Either<P, T, F> {
+    return p ? (tfn() as Either<P, T, F>) : (ffn() as Either<P, T, F>);
+}
 
 export type Endmorphism<T> = (x: T) => T;
 export type Predicate<T> = (x: T) => boolean;
@@ -83,7 +90,7 @@ export interface IDatabase<InsertType,
 
     update(x: UpdateType): MaybeObservable<IsAsync, ItemType|undefined>;
 
-    upsert(x: InsertType | UpdateType): MaybeObservable<IsAsync, ItemType>;
+    upsert(x:  UpdateType): MaybeObservable<IsAsync, ItemType>;
 
     remove(x: RemoveType): MaybeObservable<IsAsync, ItemType|undefined >;
 
@@ -94,7 +101,7 @@ export interface IDatabase<InsertType,
     insertMany(...xs: InsertType[]): MaybeObservable<IsAsync, ItemType[]>;
 
     upsertMany(
-        ...xs: (InsertType | UpdateType)[]
+        ...xs:  UpdateType[]
     ): MaybeObservable<IsAsync, ItemType[]>;
 
     updateMany(...xs: UpdateType[]): MaybeObservable<IsAsync, ItemType[]>;
