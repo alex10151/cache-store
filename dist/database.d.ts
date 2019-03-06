@@ -46,12 +46,14 @@ export interface Id {
 }
 export declare type Equal<op1, op2> = (x: op1, y: op2) => boolean;
 export declare type ToSearchType<ItemType, SearchType> = (x: ItemType) => SearchType;
+export declare type FromUpdateType<UpdateType, ItemType> = (x: UpdateType, y: ItemType) => ItemType;
 export declare class Database<InsertType extends Object, UpdateType extends Object, RemoveType extends Object, SearchType extends Object, ItemType extends Id & UpdateType & RemoveType & SearchType & InsertType, IsAsync extends boolean> implements IDatabase<InsertType, UpdateType, RemoveType, SearchType, ItemType, IsAsync> {
     private updateEqual?;
     private removeEqual?;
     private toSearch?;
+    private fromUpdate?;
     dbCore: ItemStore<ItemType, ArrayCollectionOf<ItemType>, IsAsync>;
-    constructor(kernel: ItemStore<ItemType, ArrayCollectionOf<ItemType>, IsAsync>, updateEqual?: Equal<UpdateType, ItemType> | undefined, removeEqual?: Equal<RemoveType, ItemType> | undefined, toSearch?: ToSearchType<ItemType, SearchType> | undefined);
+    constructor(kernel: ItemStore<ItemType, ArrayCollectionOf<ItemType>, IsAsync>, updateEqual?: Equal<UpdateType, ItemType> | undefined, removeEqual?: Equal<RemoveType, ItemType> | undefined, toSearch?: ToSearchType<ItemType, SearchType> | undefined, fromUpdate?: FromUpdateType<UpdateType, ItemType> | undefined);
     destroy(): void;
     insert(x: InsertType): MaybeObservable<IsAsync, ItemType>;
     insertMany(...xs: InsertType[]): MaybeObservable<IsAsync, ItemType[]>;

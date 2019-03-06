@@ -146,17 +146,18 @@ class ItemStore {
 }
 exports.ItemStore = ItemStore;
 class Database {
-    constructor(kernel, updateEqual, removeEqual, toSearch) {
+    constructor(kernel, updateEqual, removeEqual, toSearch, fromUpdate) {
         this.updateEqual = updateEqual;
         this.removeEqual = removeEqual;
         this.toSearch = toSearch;
+        this.fromUpdate = fromUpdate;
         this.dbCore = kernel;
     }
     destroy() {
         this.dbCore.destroy();
     }
     insert(x) {
-        return (this.dbCore.isAsync ? rxjs_1.of(this.insertKernel(x)) : this.insertKernel(x));
+        return (this.insertKernel(x));
     }
     insertMany(...xs) {
         let result = Array();
@@ -165,33 +166,44 @@ class Database {
             let item = Object.assign({ id: id }, x);
             result.push(item);
         });
-        this.dbCore.extend(new ArrayCollectionOf(result));
-        return (this.dbCore.isAsync ? rxjs_1.of(result) : result);
+        if (!this.dbCore.isAsync) {
+            this.dbCore.extend(new ArrayCollectionOf(result));
+            return result;
+        }
+        else {
+            return this.dbCore.extend(new ArrayCollectionOf(result))
+                .pipe(operators_1.switchMap((store) => {
+                return store.findMany((x) => {
+                    return !(result.find(y => y.id === x.id) === undefined);
+                });
+            }));
+        }
     }
     remove(x) {
         if (this.removeEqual === undefined) {
             throw new Error('removeEqual() is undefined.');
         }
         let result = undefined;
-        this.dbCore.filter(y => {
+        const ob = this.dbCore.filter(y => {
             if (!this.removeEqual(x, y)) {
                 return true;
             }
             else {
-                result = y;
+                if (!this.dbCore.isAsync)
+                    result = y;
                 return false;
             }
         });
         return (this.dbCore.isAsync ?
-            ((result === undefined) ?
-                new rxjs_1.Observable() : rxjs_1.of(result)) : result);
+            ob
+                .pipe(operators_1.switchMap(() => rxjs_1.of(result))) : result);
     }
     removeMany(...xs) {
         if (this.removeEqual === undefined) {
             throw new Error('removeEqual() is undefined.');
         }
-        let result = [];
-        this.dbCore.filter(y => {
+        const result = [];
+        const ob = this.dbCore.filter(y => {
             let flag = true;
             xs.forEach(x => {
                 if (this.removeEqual(x, y)) {
@@ -202,7 +214,8 @@ class Database {
             return flag;
         });
         return (this.dbCore.isAsync ?
-            ((result === []) ? new rxjs_1.Observable() : rxjs_1.of(result)) : result);
+            ob
+                .pipe(operators_1.switchMap(() => rxjs_1.of(result))) : result);
     }
     search(fn) {
         if (this.toSearch === undefined) {
@@ -232,73 +245,97 @@ class Database {
         if (this.updateEqual === undefined) {
             throw new Error('updateEqual() is undefined.');
         }
-        return (this.dbCore.isAsync ?
-            ((this.updateKernel(x) === undefined) ? new rxjs_1.Observable() : rxjs_1.of(this.updateKernel(x)))
-            : this.updateKernel(x));
+        if (this.fromUpdate === undefined) {
+            throw new Error('fromUpdate() is undefined.');
+        }
+        return this.updateKernel(x);
     }
     updateMany(...xs) {
         if (this.updateEqual === undefined) {
             throw new Error('updateEqual() is undefined.');
         }
-        let result = [];
-        xs.forEach(x => {
-            result.push(this.updateKernel(x));
-        });
-        return (this.dbCore.isAsync ?
-            ((result === []) ? new rxjs_1.Observable() : rxjs_1.of(result)) : result);
+        if (this.fromUpdate === undefined) {
+            throw new Error('fromUpdate() is undefined.');
+        }
+        if (this.dbCore.isAsync) {
+            const xs_res = xs.map(x => this.updateKernel(x));
+            return rxjs_1.zip(...xs_res);
+        }
+        else {
+            const result = xs.map(x => this.updateKernel(x));
+            return result;
+        }
     }
     upsert(x) {
         if (this.updateEqual === undefined) {
             throw new Error('updateEqual() is undefined.');
         }
-        let result = this.updateKernel(x);
-        return (result === undefined) ?
-            this.insert(this.updateToInsert(x)) :
-            ((this.dbCore.isAsync) ? rxjs_1.of(result) : result);
+        if (this.fromUpdate === undefined) {
+            throw new Error('fromUpdate() is undefined.');
+        }
+        if (!this.dbCore.isAsync) {
+            let result = this.updateKernel(x);
+            return (result === undefined ? this.insert(this.updateToInsert(x)) : result);
+        }
+        else {
+            return this.updateKernel(x).pipe(operators_1.switchMap((item) => {
+                return (item === undefined ? this.insert(this.updateToInsert(x)) : rxjs_1.of(item));
+            }));
+        }
     }
     upsertMany(...xs) {
         if (this.updateEqual === undefined) {
             throw new Error('updateEqual() is undefined.');
         }
-        const result = xs.map(x => this.updateKernel(x)).map((x, index) => {
-            return (x === undefined) ? this.insertKernel(this.updateToInsert(xs[index])) : x;
-        });
-        return (this.dbCore.isAsync ? rxjs_1.of(result) : result);
+        if (this.fromUpdate === undefined) {
+            throw new Error('fromUpdate() is undefined.');
+        }
+        if (this.dbCore.isAsync) {
+            return rxjs_1.zip(xs.map(x => this.updateKernel(x))).pipe(operators_1.switchMap(items => rxjs_1.zip(items.map((item, index) => {
+                return (item === undefined) ? this.insertKernel(this.updateToInsert(xs[index])) : rxjs_1.of(item);
+            }))));
+        }
+        else {
+            const result = xs.map(x => this.updateKernel(x)).map((x, index) => {
+                return (x === undefined) ? this.insertKernel(this.updateToInsert(xs[index])) : x;
+            });
+            return result;
+        }
     }
     updateToInsert(x) {
         let result = {};
-        // for (let key1 in Object.keys(x)) {
-        //     for (let key2 in Object.keys(result)) {
-        //         if (key1 === key2) {
-        //             (<any>result)[key2] = (<any>x)[key1];
-        //         }
-        //     }
-        // }
         result = Object.assign({}, x, result);
         return result;
     }
     updateKernel(x) {
         let result = undefined;
         let fn = (y) => {
-            // for (let key1  in Object.keys(y)) {
-            //     for (let key2 in Object.keys(x)) {
-            //         if (key1 === key2) {
-            //             (<any>y)[key1] = (<any>x)[key2];
-            //         }
-            //     }
-            // }
-            result = Object.assign({}, y, x);
+            result = this.fromUpdate(x, y);
             return result;
         };
         let fnEq = (y) => this.updateEqual(x, y);
-        this.dbCore.predicateMap(fn, fnEq);
-        return result;
+        if (this.dbCore.isAsync)
+            return this.dbCore
+                .predicateMap(fn, fnEq)
+                .pipe(operators_1.switchMap((store) => (result === undefined) ?
+                new rxjs_1.Observable(undefined) :
+                store.find(x => x.id === result.id)));
+        else {
+            this.dbCore.predicateMap(fn, fnEq);
+            return result;
+        }
     }
     insertKernel(x) {
         let id = uuid_1.v4();
         let item = Object.assign({ id: id }, x);
-        this.dbCore.extend(new ArrayCollectionOf([item]));
-        return item;
+        if (this.dbCore.isAsync)
+            return this.dbCore
+                .extend(new ArrayCollectionOf([item]))
+                .pipe(operators_1.switchMap((store) => store.find(x => x.id === id)));
+        else {
+            this.dbCore.extend(new ArrayCollectionOf([item]));
+            return item;
+        }
     }
 }
 exports.Database = Database;

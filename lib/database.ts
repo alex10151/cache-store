@@ -1,4 +1,4 @@
-import {Observable, BehaviorSubject, of, from, never, noop} from "rxjs";
+import {Observable, BehaviorSubject, of, from, never, noop, zip} from "rxjs";
 import {
     IStore,
     Endmorphism,
@@ -10,7 +10,7 @@ import {
     toEither,
     Either
 } from './store';
-import {first, switchMap, map} from "rxjs/operators";
+import {first, switchMap, map, concatAll, zipAll} from "rxjs/operators";
 import {v4 as uuid} from 'uuid';
 
 export class StoreSync<StateType> implements IStore<StateType, false> {
@@ -209,6 +209,7 @@ export interface Id {
 
 export type Equal<op1, op2> = (x: op1, y: op2) => boolean;
 export type ToSearchType<ItemType, SearchType> = (x: ItemType) => SearchType;
+export type FromUpdateType<UpdateType, ItemType> = (x: UpdateType, y: ItemType) => ItemType;
 
 export class Database<InsertType extends Object,
     UpdateType extends Object,
@@ -225,7 +226,8 @@ export class Database<InsertType extends Object,
 
     constructor(kernel: ItemStore<ItemType, ArrayCollectionOf<ItemType>, IsAsync>,
                 private updateEqual?: Equal<UpdateType, ItemType>, private removeEqual?: Equal<RemoveType, ItemType>,
-                private toSearch?: ToSearchType<ItemType, SearchType>) {
+                private toSearch?: ToSearchType<ItemType, SearchType>,
+                private fromUpdate?: FromUpdateType<UpdateType, ItemType>) {
         this.dbCore = kernel;
     }
 
@@ -235,7 +237,7 @@ export class Database<InsertType extends Object,
 
 
     insert(x: InsertType): MaybeObservable<IsAsync, ItemType> {
-        return (this.dbCore.isAsync ? of(this.insertKernel(x)) : this.insertKernel(x)) as MaybeObservable<IsAsync, ItemType>;
+        return (this.insertKernel(x)) as MaybeObservable<IsAsync, ItemType>;
     }
 
     insertMany(...xs: InsertType[]): MaybeObservable<IsAsync, ItemType[]> {
@@ -245,8 +247,20 @@ export class Database<InsertType extends Object,
             let item = {id: id, ...(x as Object)};
             result.push(item as ItemType);
         });
-        this.dbCore.extend(new ArrayCollectionOf<ItemType>(result));
-        return (this.dbCore.isAsync ? of(result) : result) as MaybeObservable<IsAsync, ItemType[]>;
+        if (!this.dbCore.isAsync) {
+            this.dbCore.extend(new ArrayCollectionOf<ItemType>(result));
+            return result as MaybeObservable<IsAsync, ItemType[]>;
+        } else {
+            return (this.dbCore.extend(new ArrayCollectionOf<ItemType>(result)) as
+                Observable<ItemStore<ItemType, ArrayCollectionOf<ItemType>, IsAsync>>)
+                .pipe(
+                    switchMap((store) => {
+                        return store.findMany(
+                            (x: ItemType) => {
+                                return !(result.find(y => y.id === x.id) === undefined);
+                            }) as Observable<ItemType[]>;
+                    })) as MaybeObservable<IsAsync, ItemType[]>;
+        }
     }
 
     remove(x: RemoveType): MaybeObservable<IsAsync, ItemType | undefined> {
@@ -254,25 +268,26 @@ export class Database<InsertType extends Object,
             throw new Error('removeEqual() is undefined.');
         }
         let result: (ItemType | undefined) = undefined;
-        this.dbCore.filter(y => {
+        const ob = this.dbCore.filter(y => {
             if (!(this.removeEqual as Equal<RemoveType, ItemType>)(x, y)) {
                 return true
             } else {
-                result = y;
+                if (!this.dbCore.isAsync)
+                    result = y;
                 return false
             }
         });
         return (this.dbCore.isAsync ?
-            ((result === undefined) ?
-                new Observable<never>() : of(result)) : result) as MaybeObservable<IsAsync, ItemType | undefined>;
+            (ob as Observable<ItemStore<ItemType, ArrayCollectionOf<ItemType>, IsAsync>>)
+                .pipe(switchMap(() => of(result))) : result) as MaybeObservable<IsAsync, ItemType | undefined>;
     }
 
     removeMany(...xs: RemoveType[]): MaybeObservable<IsAsync, ItemType[]> {
         if (this.removeEqual === undefined) {
             throw new Error('removeEqual() is undefined.');
         }
-        let result: ItemType[] = [];
-        this.dbCore.filter(y => {
+        const result: ItemType[] = [];
+        const ob = this.dbCore.filter(y => {
             let flag = true;
             xs.forEach(x => {
                 if ((this.removeEqual as Equal<RemoveType, ItemType>)(x, y)) {
@@ -283,7 +298,8 @@ export class Database<InsertType extends Object,
             return flag;
         });
         return (this.dbCore.isAsync ?
-            ((result === []) ? new Observable<never>() : of(result)) : result) as MaybeObservable<IsAsync, ItemType[]>;
+            (ob as Observable<ItemStore<ItemType, ArrayCollectionOf<ItemType>, IsAsync>>)
+                .pipe(switchMap(() => of(result))) : result) as MaybeObservable<IsAsync, ItemType[]>;
     }
 
     search(fn: Predicate<SearchType>): MaybeObservable<IsAsync, ItemType | undefined> {
@@ -318,9 +334,10 @@ export class Database<InsertType extends Object,
         if (this.updateEqual === undefined) {
             throw new Error('updateEqual() is undefined.');
         }
-        return (this.dbCore.isAsync ?
-            ((this.updateKernel(x) === undefined) ? new Observable<never>() : of(this.updateKernel(x)))
-            : this.updateKernel(x)) as MaybeObservable<IsAsync, ItemType | undefined>;
+        if (this.fromUpdate === undefined) {
+            throw new Error('fromUpdate() is undefined.');
+        }
+        return this.updateKernel(x) as MaybeObservable<IsAsync, ItemType | undefined>;
     }
 
 
@@ -328,69 +345,97 @@ export class Database<InsertType extends Object,
         if (this.updateEqual === undefined) {
             throw new Error('updateEqual() is undefined.');
         }
-        let result: (ItemType | undefined)[] = [];
-        xs.forEach(x => {
-            result.push(this.updateKernel(x))
-        });
-        return (this.dbCore.isAsync ?
-            ((result === []) ? new Observable<never>() : of(result)) : result) as MaybeObservable<IsAsync, ItemType[]>;
+        if (this.fromUpdate === undefined) {
+            throw new Error('fromUpdate() is undefined.');
+        }
+
+        if (this.dbCore.isAsync) {
+            const xs_res = xs.map(x => this.updateKernel(x) as Observable<ItemType | undefined>);
+            return zip(...xs_res) as MaybeObservable<IsAsync, ItemType[]>;
+
+        } else {
+            const result = xs.map(x => this.updateKernel(x) as ItemType);
+            return result as MaybeObservable<IsAsync, ItemType[]>;
+        }
     }
 
     upsert(x: UpdateType): MaybeObservable<IsAsync, ItemType> {
         if (this.updateEqual === undefined) {
             throw new Error('updateEqual() is undefined.');
         }
-        let result = this.updateKernel(x);
-        return (result === undefined) ?
-            this.insert(this.updateToInsert(x)) :
-            ((this.dbCore.isAsync) ? of(result) : result) as MaybeObservable<IsAsync, ItemType>;
+        if (this.fromUpdate === undefined) {
+            throw new Error('fromUpdate() is undefined.');
+        }
+        if (!this.dbCore.isAsync) {
+            let result = this.updateKernel(x);
+            return (result === undefined ? this.insert(this.updateToInsert(x)) : result) as MaybeObservable<IsAsync, ItemType>;
+        } else {
+            return (this.updateKernel(x) as Observable<ItemType | undefined>).pipe(switchMap((item) => {
+                return (item === undefined ? this.insert(this.updateToInsert(x)) : of(item)) as Observable<ItemType>
+            })) as MaybeObservable<IsAsync, ItemType>;
+        }
     }
 
     upsertMany(...xs: UpdateType[]): MaybeObservable<IsAsync, ItemType[]> {
         if (this.updateEqual === undefined) {
             throw new Error('updateEqual() is undefined.');
         }
-        const result = xs.map(x => this.updateKernel(x)).map((x, index) => {
-            return (x === undefined) ? this.insertKernel(this.updateToInsert(xs[index])) : x;
-        });
-        return (this.dbCore.isAsync ? of(result) : result) as MaybeObservable<IsAsync, ItemType[]>;
+        if (this.fromUpdate === undefined) {
+            throw new Error('fromUpdate() is undefined.');
+        }
+        if (this.dbCore.isAsync) {
+            return zip(xs.map(x => this.updateKernel(x))).pipe(switchMap(items => zip(items.map((item, index) => {
+                return (item === undefined) ? this.insertKernel(this.updateToInsert(xs[index])) : of(item)
+            })))) as MaybeObservable<IsAsync, ItemType[]>;
+        } else {
+            const result = xs.map(x => this.updateKernel(x)).map((x, index) => {
+                return (x === undefined) ? this.insertKernel(this.updateToInsert(xs[index])) : x;
+            });
+            return result as MaybeObservable<IsAsync, ItemType[]>;
+        }
     }
 
     private updateToInsert(x: UpdateType): InsertType {
         let result = {} as InsertType;
-        // for (let key1 in Object.keys(x)) {
-        //     for (let key2 in Object.keys(result)) {
-        //         if (key1 === key2) {
-        //             (<any>result)[key2] = (<any>x)[key1];
-        //         }
-        //     }
-        // }
+
         result = {...x, ...result};
         return result;
     }
 
-    private updateKernel(x: UpdateType): ItemType | undefined {
+    private updateKernel(x: UpdateType): (ItemType | undefined) | Observable<ItemType | undefined> {
         let result: (ItemType | undefined) = undefined;
         let fn = (y: ItemType) => {
-            // for (let key1  in Object.keys(y)) {
-            //     for (let key2 in Object.keys(x)) {
-            //         if (key1 === key2) {
-            //             (<any>y)[key1] = (<any>x)[key2];
-            //         }
-            //     }
-            // }
-            result = {...y, ...x};
+            result = (this.fromUpdate as FromUpdateType<UpdateType, ItemType>)(x, y);
             return result;
         };
         let fnEq = (y: ItemType) => (this.updateEqual as Equal<UpdateType, ItemType>)(x, y);
-        this.dbCore.predicateMap(fn, fnEq);
-        return result;
+        if (this.dbCore.isAsync)
+            return (this.dbCore
+                .predicateMap(fn, fnEq) as
+                Observable<ItemStore<ItemType, ArrayCollectionOf<ItemType>, IsAsync>>)
+                .pipe(
+                    switchMap(
+                        (store) => (result === undefined) ?
+                            new Observable<undefined>(undefined) :
+                            store.find(x => x.id === (result as ItemType).id) as Observable<ItemType | undefined>));
+        else {
+            this.dbCore.predicateMap(fn, fnEq);
+            return result;
+        }
     }
 
-    private insertKernel(x: InsertType): ItemType {
+    private insertKernel(x: InsertType): ItemType | Observable<ItemType | undefined> {
         let id = uuid();
         let item = {id: id, ...x} as ItemType;
-        this.dbCore.extend(new ArrayCollectionOf<ItemType>([item]));
-        return item;
+        if (this.dbCore.isAsync)
+            return (this.dbCore
+                .extend(new ArrayCollectionOf<ItemType>([item])) as
+                Observable<ItemStore<ItemType, ArrayCollectionOf<ItemType>, IsAsync>>)
+                .pipe(switchMap((store) => store.find(x => x.id === id) as Observable<ItemType | undefined>));
+        else {
+            this.dbCore.extend(new ArrayCollectionOf<ItemType>([item]));
+            return item;
+        }
+
     }
 }

@@ -5,6 +5,15 @@ const testing_1 = require("rxjs/testing");
 const chai_1 = require("chai");
 const rxjs_1 = require("rxjs");
 const operators_1 = require("rxjs/operators");
+const withoutId = (x) => {
+    let res = {};
+    for (let key1 in x) {
+        if (x.hasOwnProperty(key1) && (key1 !== 'id')) {
+            res[key1] = x[key1];
+        }
+    }
+    return res;
+};
 describe('StoreSync', () => {
     let store;
     let scheduler = new testing_1.TestScheduler((actual, expected) => {
@@ -267,6 +276,7 @@ describe('sync database in memory', () => {
     beforeEach(() => {
         store = new database_1.ItemStore(new database_1.ArrayCollectionOf(initValues), false);
     });
+    afterEach(() => store.destroy());
     it('should insert obj into the kernel correctly', function () {
         const db = new database_1.Database(store);
         const expected = db.insert({ price: 20, name: 'item4', from: ['cn'] });
@@ -394,13 +404,15 @@ describe('sync database in memory', () => {
         const updatefn = (x, y) => {
             return (x.name === y.name);
         };
+        const fromUpdatefn = (x, y) => {
+            return Object.assign({}, x, { id: y.id });
+        };
         const expected = {
             name: 'item2',
             price: 1,
             id: '222222',
-            from: ['cn'],
         };
-        const db = new database_1.Database(store, updatefn, undefined, undefined);
+        const db = new database_1.Database(store, updatefn, undefined, undefined, fromUpdatefn);
         const res = db.update({ name: 'item2', price: 1 });
         chai_1.expect(db.dbCore.storeBase.state.container.find(x => x.name === 'item2')).is.deep.equal(expected);
         chai_1.expect(res).is.deep.equal(expected);
@@ -409,31 +421,35 @@ describe('sync database in memory', () => {
         const updatefn = (x, y) => {
             return (x.name === y.name);
         };
-        const db = new database_1.Database(store, updatefn, undefined, undefined);
+        const fromUpdatefn = (x, y) => {
+            return Object.assign({}, x, { id: y.id });
+        };
+        const db = new database_1.Database(store, updatefn, undefined, undefined, fromUpdatefn);
         const res = db.update({ name: 'item5', price: 1 });
         chai_1.expect(db.dbCore.storeBase.state.container.find(x => x.name === 'item5')).is.deep.equal(undefined);
         chai_1.expect(res).is.deep.equal(undefined);
     });
     it('should throw no updateEqual() error', function () {
-        const db = new database_1.Database(store, undefined, undefined, undefined);
+        const db = new database_1.Database(store, undefined, undefined, undefined, undefined);
         chai_1.expect(db.update).to.throw();
     });
     it('should update the right items', function () {
         const updatefn = (x, y) => {
             return (x.name === y.name);
         };
+        const fromUpdatefn = (x, y) => {
+            return Object.assign({}, x, { id: y.id });
+        };
         const expected = [{
                 name: 'item2',
                 price: 1,
                 id: '222222',
-                from: ['cn'],
             }, {
                 price: 2,
                 name: 'item1',
                 id: '111111',
-                from: ['cn', 'us'],
             }];
-        const db = new database_1.Database(store, updatefn, undefined, undefined);
+        const db = new database_1.Database(store, updatefn, undefined, undefined, fromUpdatefn);
         const res = db.updateMany({ name: 'item2', price: 1 }, { name: 'item1', price: 2 });
         chai_1.expect(db.dbCore.storeBase.state.container.find(x => x.name === 'item2')).is.deep.equal(expected[0]);
         chai_1.expect(db.dbCore.storeBase.state.container.find(x => x.name === 'item1')).is.deep.equal(expected[1]);
@@ -443,12 +459,14 @@ describe('sync database in memory', () => {
         const updatefn = (x, y) => {
             return (x.name === y.name);
         };
-        const db = new database_1.Database(store, updatefn, undefined, undefined);
+        const fromUpdatefn = (x, y) => {
+            return Object.assign({}, x, { id: y.id });
+        };
+        const db = new database_1.Database(store, updatefn, undefined, undefined, fromUpdatefn);
         const expected = [undefined, {
                 price: 2,
                 name: 'item1',
                 id: '111111',
-                from: ['cn', 'us'],
             }];
         const res = db.updateMany({ name: 'item5', price: 1 }, { name: 'item1', price: 2 });
         chai_1.expect(db.dbCore.storeBase.state.container.find(x => x.name === 'item5')).is.deep.equal(expected[0]);
@@ -459,13 +477,15 @@ describe('sync database in memory', () => {
         const updatefn = (x, y) => {
             return (x.name === y.name);
         };
+        const fromUpdatefn = (x, y) => {
+            return Object.assign({}, x, { id: y.id });
+        };
         const expected = {
             name: 'item2',
             price: 1,
             id: '222222',
-            from: ['cn'],
         };
-        const db = new database_1.Database(store, updatefn, undefined, undefined);
+        const db = new database_1.Database(store, updatefn, undefined, undefined, fromUpdatefn);
         const res = db.upsert({ name: 'item2', price: 1 });
         chai_1.expect(db.dbCore.storeBase.state.container.find(x => x.name === 'item2')).is.deep.equal(expected);
         chai_1.expect(res).is.deep.equal(expected);
@@ -474,7 +494,10 @@ describe('sync database in memory', () => {
         const updatefn = (x, y) => {
             return (x.name === y.name);
         };
-        const db = new database_1.Database(store, updatefn, undefined, undefined);
+        const fromUpdatefn = (x, y) => {
+            return Object.assign({}, x, { id: y.id });
+        };
+        const db = new database_1.Database(store, updatefn, undefined, undefined, fromUpdatefn);
         const res = db.upsert({ name: 'item5', price: 1, from: ['uk'] });
         chai_1.expect(db.dbCore.storeBase.state.container.find(x => x.name === 'item5')).is.deep.equal(res);
         chai_1.expect(db.dbCore.storeBase.state.container.length).is.equal(4);
@@ -483,10 +506,287 @@ describe('sync database in memory', () => {
         const updatefn = (x, y) => {
             return (x.name === y.name);
         };
-        const db = new database_1.Database(store, updatefn, undefined, undefined);
+        const fromUpdatefn = (x, y) => {
+            return Object.assign({}, x, { id: y.id });
+        };
+        const db = new database_1.Database(store, updatefn, undefined, undefined, fromUpdatefn);
         const res = db.upsertMany({ name: 'item2', price: 1 }, { name: 'item4', price: 2 });
         chai_1.expect(db.dbCore.storeBase.state.container.find(x => x.name === 'item2')).is.equal(res[0]);
         chai_1.expect(db.dbCore.storeBase.state.container.find(x => x.name === 'item4')).is.equal(res[1]);
         chai_1.expect(db.dbCore.storeBase.state.container.length).is.equal(4);
+    });
+});
+describe('Async database in memory', () => {
+    const initValues = [
+        {
+            price: 10,
+            name: 'item1',
+            id: '111111',
+            from: ['cn', 'us'],
+        },
+        {
+            price: 100,
+            name: 'item2',
+            id: '222222',
+            from: ['cn'],
+        },
+        {
+            price: 2,
+            name: 'item3',
+            id: '333333',
+            from: ['cn', 'us', 'uk'],
+        }
+    ];
+    let store;
+    beforeEach(() => {
+        store = new database_1.ItemStore(new database_1.ArrayCollectionOf(initValues), true);
+    });
+    afterEach(() => store.destroy());
+    it('should insert obj into the kernel correctly', function () {
+        const db = new database_1.Database(store);
+        const expected = { price: 20, name: 'item4', from: ['cn'] };
+        db.insert(expected).pipe(operators_1.switchMap(() => db.dbCore.find(x => x.name === 'item4')))
+            .subscribe(item => chai_1.expect(withoutId(item)).deep.equal(expected));
+    });
+    it('should insert many values correctly', function () {
+        const db = new database_1.Database(store);
+        const values = [{ price: 20, name: 'item4', from: ['cn'] },
+            { price: 21, name: 'item5', from: ['cn'] }];
+        db.insertMany(values[0], values[1]).pipe(operators_1.switchMap(() => db.dbCore.findMany(x => x.name === 'item4' || x.name === 'item5')))
+            .subscribe(items => {
+            chai_1.expect(items.length === 2);
+            chai_1.expect(items.map(withoutId)).deep.equal(values);
+        });
+    });
+    it('should remove the target item', function () {
+        const fn = (x, y) => {
+            return x.name === y.name;
+        };
+        const db = new database_1.Database(store, undefined, fn);
+        db.remove({ name: 'item2' }).pipe(operators_1.switchMap(() => db.dbCore.find(item => item.name === 'item2')))
+            .subscribe(x => chai_1.expect(x).is.undefined);
+    });
+    it('should throw error if removeEqual() undefined in remove', function () {
+        const db = new database_1.Database(store, undefined, undefined, undefined);
+        chai_1.expect(db.remove).to.throw();
+    });
+    it('should remove many target items', function () {
+        const fn = (x, y) => {
+            return x.name === y.name;
+        };
+        const db = new database_1.Database(store, undefined, fn);
+        db.removeMany({ name: 'item2' }, { name: 'item1' })
+            .pipe(operators_1.switchMap(() => db.dbCore.findMany(item => (item.name === 'item2') || (item.name === 'item1'))))
+            .subscribe(result => chai_1.expect(result).is.deep.equal([]));
+    });
+    it('should find the right value or undefined', function () {
+        const toSearch = (x) => {
+            return { name: x.name };
+        };
+        const expected = {
+            price: 100,
+            name: 'item2',
+            id: '222222',
+            from: ['cn'],
+        };
+        const fn = (x) => x.name === 'item2';
+        const db = new database_1.Database(store, undefined, undefined, toSearch);
+        db.search(fn).subscribe(result => chai_1.expect(result).is.deep.equal(expected));
+    });
+    it('should throw error if toSearch() undefined in search', function () {
+        const fn = (x) => x.name === 'item2';
+        const db = new database_1.Database(store, undefined, undefined, undefined);
+        chai_1.expect(db.search).to.throw();
+    });
+    it('should find the right values or undefined', function () {
+        const toSearch = (x) => {
+            return { name: x.name };
+        };
+        const fn = (x) => x.name !== 'item2';
+        const db = new database_1.Database(store, undefined, undefined, toSearch);
+        db.searchMany(fn).subscribe(result => chai_1.expect(result).is.deep.equal([
+            {
+                price: 10,
+                name: 'item1',
+                id: '111111',
+                from: ['cn', 'us'],
+            }, {
+                price: 2,
+                name: 'item3',
+                id: '333333',
+                from: ['cn', 'us', 'uk'],
+            }
+        ]));
+    });
+    it('should throw error if toSearch is undefined in searchMany', function () {
+        const fn = (x) => x.name !== 'item2';
+        const db = new database_1.Database(store, undefined, undefined, undefined);
+        chai_1.expect(db.searchMany).to.throw();
+    });
+    it('should find value as observable', function () {
+        const toSearch = (x) => {
+            return { name: x.name };
+        };
+        const fn = (x) => {
+            return x.name === 'item2';
+        };
+        const db = new database_1.Database(store, undefined, undefined, toSearch);
+        db.findObservable(fn).subscribe(x => chai_1.expect(x).is.deep.equal({
+            price: 100,
+            name: 'item2',
+            id: '222222',
+            from: ['cn'],
+        }));
+    });
+    it('should throw error if toSearch is undefined in findObservable', function () {
+        const fn = (x) => x.name !== 'item2';
+        const db = new database_1.Database(store, undefined, undefined, undefined);
+        chai_1.expect(db.findObservable).to.throw();
+    });
+    it('should find values as observables', function () {
+        const toSearch = (x) => {
+            return { name: x.name };
+        };
+        const fn = (x) => {
+            return x.name !== 'item2';
+        };
+        const db = new database_1.Database(store, undefined, undefined, toSearch);
+        db.findObservableMany(fn).subscribe(x => chai_1.expect(x).is.deep.equal([
+            {
+                price: 10,
+                name: 'item1',
+                id: '111111',
+                from: ['cn', 'us'],
+            }, {
+                price: 2,
+                name: 'item3',
+                id: '333333',
+                from: ['cn', 'us', 'uk'],
+            }
+        ]));
+    });
+    it('should update the right item', function () {
+        const updatefn = (x, y) => {
+            return (x.name === y.name);
+        };
+        const fromUpdatefn = (x, y) => {
+            return Object.assign({}, x, { id: y.id });
+        };
+        const expected = {
+            name: 'item2',
+            price: 1,
+            id: '222222',
+        };
+        const db = new database_1.Database(store, updatefn, undefined, undefined, fromUpdatefn);
+        db.update({ name: 'item2', price: 1 }).pipe(operators_1.switchMap(() => db.dbCore.find(x => x.name === 'item2')))
+            .subscribe(x => {
+            chai_1.expect(x).is.deep.equal(expected);
+        });
+    });
+    it('should return undefined if nothing to be updated', function () {
+        const updatefn = (x, y) => {
+            return (x.name === y.name);
+        };
+        const fromUpdatefn = (x, y) => {
+            return Object.assign({}, x, { id: y.id });
+        };
+        const db = new database_1.Database(store, updatefn, undefined, undefined, fromUpdatefn);
+        db.update({ name: 'item5', price: 1 }).pipe(operators_1.switchMap(() => db.dbCore.find(x => x.name === 'item5')))
+            .subscribe(x => chai_1.expect(x).is.undefined);
+    });
+    it('should throw no updateEqual() error', function () {
+        const db = new database_1.Database(store, undefined, undefined, undefined);
+        chai_1.expect(db.update).to.throw();
+    });
+    it('should update the right items', function () {
+        const updatefn = (x, y) => {
+            return (x.name === y.name);
+        };
+        const fromUpdatefn = (x, y) => {
+            return Object.assign({}, x, { id: y.id });
+        };
+        const expected = [
+            {
+                name: 'item1',
+                price: 2,
+                id: '111111',
+            },
+            {
+                name: 'item2',
+                price: 1,
+                id: '222222',
+            }
+        ];
+        const db = new database_1.Database(store, updatefn, undefined, undefined, fromUpdatefn);
+        db.updateMany({ name: 'item2', price: 1 }, {
+            name: 'item1',
+            price: 2
+        }).pipe(operators_1.switchMap(() => db.dbCore.findMany(x => x.name === 'item2' || x.name === 'item1')))
+            .subscribe(result => chai_1.expect(result).is.deep.equal(expected));
+    });
+    it('should return undefined when updating fails', function () {
+        const updatefn = (x, y) => {
+            return (x.name === y.name);
+        };
+        const fromUpdatefn = (x, y) => {
+            return Object.assign({}, x, { id: y.id });
+        };
+        const db = new database_1.Database(store, updatefn, undefined, undefined, fromUpdatefn);
+        const expected = [undefined, {
+                price: 2,
+                name: 'item1',
+                id: '111111',
+            }];
+        db.updateMany({ name: 'item5', price: 1 }, { name: 'item1', price: 2 })
+            .pipe(operators_1.switchMap(() => db.dbCore.findMany(x => x.name === 'item5' || x.name === 'item1')))
+            .subscribe(result => chai_1.expect(result).is.deep.equal(expected));
+    });
+    it('should update directly if there is a match of target item', function () {
+        const updatefn = (x, y) => {
+            return (x.name === y.name);
+        };
+        const fromUpdatefn = (x, y) => {
+            return Object.assign({}, x, { id: y.id });
+        };
+        const expected = {
+            name: 'item2',
+            price: 1,
+            id: '222222',
+        };
+        const db = new database_1.Database(store, updatefn, undefined, undefined, fromUpdatefn);
+        db.upsert({ name: 'item2', price: 1 }).pipe(operators_1.switchMap(() => db.dbCore.find(x => x.name === 'item2')))
+            .subscribe(result => chai_1.expect(result).is.deep.equal(expected));
+    });
+    it('should insert if there is no match of target item', function () {
+        const updatefn = (x, y) => {
+            return (x.name === y.name);
+        };
+        const fromUpdatefn = (x, y) => {
+            return Object.assign({}, x, { id: y.id });
+        };
+        const db = new database_1.Database(store, updatefn, undefined, undefined, fromUpdatefn);
+        db.upsert({
+            name: 'item5',
+            price: 1,
+            from: ['uk']
+        }).pipe(operators_1.switchMap(() => db.dbCore.find(x => x.name === 'item5')))
+            .subscribe(result => chai_1.expect(result).is.not.undefined);
+    });
+    it('should update if there is a match otherwise insert in a list of items', function () {
+        const updatefn = (x, y) => {
+            return (x.name === y.name);
+        };
+        const fromUpdatefn = (x, y) => {
+            return Object.assign({}, x, { id: y.id });
+        };
+        const db = new database_1.Database(store, updatefn, undefined, undefined, fromUpdatefn);
+        db.upsertMany({ name: 'item2', price: 1 }, {
+            name: 'item4',
+            price: 2
+        }).pipe(operators_1.switchMap(() => db.dbCore.findMany(x => x.name === 'item2' || x.name === 'item4')))
+            .subscribe(result => {
+            chai_1.expect(result.filter(x => x.name === 'item2')).is.not.undefined;
+            chai_1.expect(result.filter(x => x.name === 'item4')).is.not.undefined;
+        });
     });
 });
