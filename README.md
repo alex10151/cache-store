@@ -1,2 +1,1 @@
-# PiStore
-A simple Redux like Store implemented based on RxJS
+synchronized and Asynchronized cache based on RXJS
