@@ -1,5 +1,5 @@
-import {Observable, BehaviorSubject, of, from} from "rxjs";
-import {distinctUntilChanged} from 'rxjs/operators';
+import { Observable, BehaviorSubject, of, from } from "rxjs";
+import { distinctUntilChanged } from 'rxjs/operators';
 // const Either
 export type Either<P extends boolean, T, F> = P extends true ? T : F;
 export type MaybeObservable<P extends boolean, T> = Either<P, Observable<T>, T>;
@@ -48,7 +48,7 @@ export interface IItemStore<ItemType,
     // State level operations, for operations () => ItemType, i.e. insert
     readonly isAsync: IsAsync;
 
-    extend(items: StateType): MaybeObservable<IsAsync,IItemStore<ItemType, StateType, IsAsync>>;
+    extend(items: StateType): MaybeObservable<IsAsync, IItemStore<ItemType, StateType, IsAsync>>;
 
     // Item level operations
     map(
@@ -88,20 +88,24 @@ export interface IDatabase<InsertType,
 
     insert(x: InsertType): MaybeObservable<IsAsync, ItemType>;
 
-    update(x: UpdateType): MaybeObservable<IsAsync, ItemType|undefined>;
+    update(x: UpdateType): MaybeObservable<IsAsync, ItemType | undefined>;
 
-    upsert(x:  UpdateType): MaybeObservable<IsAsync, ItemType>;
+    upsert(x: UpdateType): MaybeObservable<IsAsync, ItemType>;
 
-    remove(x: RemoveType): MaybeObservable<IsAsync, ItemType|undefined >;
+    remove(x: RemoveType): MaybeObservable<IsAsync, ItemType | undefined>;
 
-    search(fn: Predicate<SearchType>): MaybeObservable<IsAsync, ItemType|undefined >;
+    search(fn: Predicate<SearchType>): MaybeObservable<IsAsync, ItemType | undefined>;
+
+    searchEqualTo(x: SearchType): MaybeObservable<IsAsync, ItemType | undefined>;
 
     findObservable(fn: Predicate<SearchType>): Observable<ItemType>;
+
+    findObservableEqualTo(x: SearchType): Observable<ItemType>;
 
     insertMany(...xs: InsertType[]): MaybeObservable<IsAsync, ItemType[]>;
 
     upsertMany(
-        ...xs:  UpdateType[]
+        ...xs: UpdateType[]
     ): MaybeObservable<IsAsync, ItemType[]>;
 
     updateMany(...xs: UpdateType[]): MaybeObservable<IsAsync, ItemType[]>;
@@ -118,11 +122,11 @@ type WithId<T, IdType> = T & IdType;
 
 export interface IDatabaseWithIdProxy<ModelType, IdType, IsAsync extends boolean>
     extends IDatabase<ModelType,
-        WithId<ModelType, IdType>,
-        IdType,
-        IdType,
-        WithId<ModelType, IdType>,
-        IsAsync> {
+    WithId<ModelType, IdType>,
+    IdType,
+    IdType,
+    WithId<ModelType, IdType>,
+    IsAsync> {
 }
 
 // export class StoreOld<T> {
